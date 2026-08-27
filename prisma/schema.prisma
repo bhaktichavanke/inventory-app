@@ -1,0 +1,154 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  email     String?
+  phone     String?
+  address   String?
+  gstin     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  products  Product[]
+  invoices  Invoice[]
+}
+
+model Product {
+  id                String    @id @default(cuid())
+  partNo            String    @unique
+  description       String
+  category          String?
+  supplierId        String?
+  currentStock      Float     @default(0)
+  totalPurchased    Float     @default(0)
+  totalUsed         Float     @default(0)
+  unitPrice         Float     @default(0)
+  lastPurchaseDate  DateTime?
+  lowStockThreshold Float     @default(5)
+  status            String    @default("ACTIVE")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
+  invoiceItems      InvoiceItem[]
+  projectComponents ProjectComponent[]
+  purchaseHistory   PurchaseHistory[]
+  stockMovements    StockMovement[]
+}
+
+model Invoice {
+  id           String    @id @default(cuid())
+  invoiceNo    String    @unique
+  poNumber     String?
+  supplierId   String?
+  invoiceDate  DateTime?
+  baseAmount   Float     @default(0)
+  gstAmount    Float     @default(0)
+  cgst         Float     @default(0)
+  sgst         Float     @default(0)
+  igst         Float     @default(0)
+  otherTax     Float     @default(0)
+  totalAmount  Float     @default(0)
+  receivedDate DateTime?
+  status       String    @default("NOT_RECEIVED")
+  filePath     String?
+  fileType     String?
+  fileName     String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  supplier          Supplier?         @relation(fields: [supplierId], references: [id])
+  items             InvoiceItem[]
+  purchaseHistory   PurchaseHistory[]
+  projectComponents ProjectComponent[]
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  productId   String?
+  partNo      String
+  description String
+  quantity    Float
+  unitPrice   Float    @default(0)
+  baseAmount  Float    @default(0)
+  gstAmount   Float    @default(0)
+  totalAmount Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  status      String    @default("ACTIVE")
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  components ProjectComponent[]
+}
+
+model ProjectComponent {
+  id           String   @id @default(cuid())
+  projectId    String
+  productId    String
+  invoiceId    String?
+  quantityUsed Float
+  dateUsed     DateTime @default(now())
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+}
+
+model PurchaseHistory {
+  id        String   @id @default(cuid())
+  productId String
+  invoiceId String
+  quantity  Float
+  unitPrice Float
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  productId     String
+  type          String
+  quantity      Float
+  referenceId   String?
+  referenceType String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model AppSettings {
+  id                String   @id @default("settings")
+  geminiApiKey      String?
+  lowStockThreshold Float    @default(5)
+  currency          String   @default("INR")
+  updatedAt         DateTime @updatedAt
+}
