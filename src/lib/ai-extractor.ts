@@ -116,11 +116,18 @@ export async function extractInvoiceData(
 
   try {
     const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    
+    // Model fallback sequence to ensure compatibility across API versions
+    const modelNames = [
+      'gemini-2.0-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro',
+    ]
 
     const imageBuffer = await fs.readFile(imagePath)
     const base64Image = imageBuffer.toString('base64')
-
     const effectiveMime = mimeType === 'application/pdf' ? 'image/png' : mimeType
 
     const imagePart: Part = {
@@ -130,8 +137,24 @@ export async function extractInvoiceData(
       },
     }
 
-    const result = await model.generateContent([EXTRACTION_PROMPT, imagePart])
-    const text = result.response.text()
+    let text = ''
+    let lastError: Error | null = null
+
+    for (const modelName of modelNames) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName })
+        const result = await model.generateContent([EXTRACTION_PROMPT, imagePart])
+        text = result.response.text()
+        if (text) break // Succeeded!
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e))
+        console.warn(`Gemini model "${modelName}" failed, trying next fallback...`)
+      }
+    }
+
+    if (!text && lastError) {
+      throw lastError
+    }
 
     const cleaned = text
       .replace(/```json\n?/g, '')
