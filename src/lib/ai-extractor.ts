@@ -90,7 +90,7 @@ Return ONLY this JSON structure (no markdown, no explanation):
 }`
 
 export async function extractInvoiceData(
-  imagePath: string,
+  imageInput: string | Buffer,
   mimeType: string,
   apiKey?: string
 ): Promise<ExtractionResult> {
@@ -110,7 +110,7 @@ export async function extractInvoiceData(
       totalAmount: null,
       items: [],
       flags: {},
-      error: 'GEMINI_API_KEY not configured. Please add your API key in Settings.',
+      error: 'GEMINI_API_KEY not configured. Please add your API key in Settings or Environment Variables.',
     }
   }
 
@@ -126,14 +126,21 @@ export async function extractInvoiceData(
       'gemini-1.5-pro',
     ]
 
-    const imageBuffer = await fs.readFile(imagePath)
+    let imageBuffer: Buffer
+    if (Buffer.isBuffer(imageInput)) {
+      imageBuffer = imageInput
+    } else {
+      imageBuffer = await fs.readFile(imageInput)
+    }
+
     const base64Image = imageBuffer.toString('base64')
-    const effectiveMime = mimeType === 'application/pdf' ? 'image/png' : mimeType
+    // Gemini supports application/pdf, image/jpeg, image/png, image/webp natively
+    const effectiveMime = mimeType || (base64Image.startsWith('JVBERi0') ? 'application/pdf' : 'image/jpeg')
 
     const imagePart: Part = {
       inlineData: {
         data: base64Image,
-        mimeType: effectiveMime as 'image/jpeg' | 'image/png' | 'image/webp',
+        mimeType: effectiveMime,
       },
     }
 
@@ -148,7 +155,7 @@ export async function extractInvoiceData(
         if (text) break // Succeeded!
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e))
-        console.warn(`Gemini model "${modelName}" failed, trying next fallback...`)
+        console.warn(`Gemini model "${modelName}" failed, trying next fallback...`, lastError.message)
       }
     }
 
