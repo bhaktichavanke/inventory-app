@@ -1,8 +1,3 @@
-import { GoogleGenerativeAI, Part } from '@google/generative-ai'
-import fs from 'fs/promises'
-import os from 'os'
-import path from 'path'
-
 export interface ExtractedItem {
   partNo: string | null
   description: string | null
@@ -96,86 +91,19 @@ export async function extractInvoiceData(
   mimeType: string,
   apiKey?: string
 ): Promise<ExtractionResult> {
-  const key = apiKey || process.env.GEMINI_API_KEY
-  const openAiKey = process.env.OPENAI_API_KEY
-  const imageBuffer = Buffer.isBuffer(imageInput)
-    ? imageInput
-    : await fs.readFile(imageInput)
+  const key = apiKey || process.env.OPENAI_API_KEY
 
-  // OpenAI is the preferred provider when configured. Unlike the former
-  // fallback, this sends the invoice as a real image/PDF input—not Base64 text.
-  if (openAiKey) {
-    try {
-      return await extractWithOpenAI(imageBuffer, mimeType, openAiKey)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.warn('OpenAI invoice extraction failed; trying Gemini:', message)
-    }
+  if (!key) {
+    return extractionError(
+      'No OpenAI API key configured. Add it in Settings, or set OPENAI_API_KEY in your environment.'
+    )
   }
 
-  // If a Google service account JSON is provided in env, write it to a temp file
-  // and set GOOGLE_APPLICATION_CREDENTIALS so the SDK can use it.
-  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (saJson) {
-    try {
-      const saPath = path.join(os.tmpdir(), `gcloud-sa-${Date.now()}.json`)
-      await fs.writeFile(saPath, saJson, { encoding: 'utf8' })
-      process.env.GOOGLE_APPLICATION_CREDENTIALS = saPath
-    } catch (e) {
-      console.warn('Failed to write Google service account JSON to temp file', e)
-    }
-  }
-
-  if (!key && !saJson) {
-    return extractionError('No AI provider is configured. Add OPENAI_API_KEY or a valid GEMINI_API_KEY in the Vercel environment variables.')
-  }
+  const fs = await import('fs/promises')
+  const buffer = Buffer.isBuffer(imageInput) ? imageInput : await fs.readFile(imageInput)
 
   try {
-    const genAI = new GoogleGenerativeAI(key ?? '')
-    
-    // Model fallback sequence to ensure compatibility across API versions
-    const modelNames = [
-      'gemini-2.0-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro',
-    ]
-
-    const base64Image = imageBuffer.toString('base64')
-    // Gemini supports application/pdf, image/jpeg, image/png, image/webp natively
-    const effectiveMime = mimeType || (base64Image.startsWith('JVBERi0') ? 'application/pdf' : 'image/jpeg')
-
-    const imagePart: Part = {
-      inlineData: {
-        data: base64Image,
-        mimeType: effectiveMime,
-      },
-    }
-
-    let text = ''
-    let lastError: Error | null = null
-
-    for (const modelName of modelNames) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName })
-        const result = await model.generateContent([EXTRACTION_PROMPT, imagePart])
-        text = result.response.text()
-        if (text) break // Succeeded!
-      } catch (e) {
-        lastError = e instanceof Error ? e : new Error(String(e))
-        console.warn(`Gemini model "${modelName}" failed, trying next fallback...`, lastError.message)
-      }
-    }
-
-    if (!text) {
-      if (lastError) {
-        throw lastError
-      }
-      throw new Error('No AI response produced')
-    }
-
-    return parseExtraction(text)
+    return await extractWithOpenAI(buffer, mimeType, key)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return extractionError(`AI extraction failed: ${message}`)
@@ -187,11 +115,13 @@ async function extractWithOpenAI(
   mimeType: string,
   apiKey: string
 ): Promise<ExtractionResult> {
-  const effectiveMime = mimeType || (buffer.subarray(0, 4).toString() === '%PDF' ? 'application/pdf' : 'image/jpeg')
+  const effectiveMime =
+    mimeType || (buffer.subarray(0, 4).toString() === '%PDF' ? 'application/pdf' : 'image/jpeg')
   const base64 = buffer.toString('base64')
-  const documentInput = effectiveMime === 'application/pdf'
-    ? { type: 'input_file', filename: 'invoice.pdf', file_data: `data:application/pdf;base64,${base64}` }
-    : { type: 'input_image', image_url: `data:${effectiveMime};base64,${base64}`, detail: 'high' }
+  const documentInput =
+    effectiveMime === 'application/pdf'
+      ? { type: 'input_file', filename: 'invoice.pdf', file_data: `data:application/pdf;base64,${base64}` }
+      : { type: 'input_image', image_url: `data:${effectiveMime};base64,${base64}`, detail: 'high' }
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -236,8 +166,19 @@ function parseExtraction(text: string): ExtractionResult {
 
 function extractionError(error: string): ExtractionResult {
   return {
-    invoiceNo: null, poNumber: null, invoiceDate: null, supplierName: null,
-    baseAmount: null, gstAmount: null, cgst: null, sgst: null, igst: null,
-    otherTax: null, totalAmount: null, items: [], flags: {}, error,
+    invoiceNo: null,
+    poNumber: null,
+    invoiceDate: null,
+    supplierName: null,
+    baseAmount: null,
+    gstAmount: null,
+    cgst: null,
+    sgst: null,
+    igst: null,
+    otherTax: null,
+    totalAmount: null,
+    items: [],
+    flags: {},
+    error,
   }
 }

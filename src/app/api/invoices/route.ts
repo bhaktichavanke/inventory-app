@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { invoiceNo: { contains: search } },
-        { poNumber: { contains: search } },
-        { supplier: { name: { contains: search } } },
+        { invoiceNo: { contains: search, mode: 'insensitive' } },
+        { poNumber: { contains: search, mode: 'insensitive' } },
+        { supplier: { name: { contains: search, mode: 'insensitive' } } },
       ]
     }
     if (status) where.status = status

@@ -7,11 +7,11 @@ export async function GET() {
   try {
     const settings = await prisma.appSettings.findUnique({ where: { id: 'settings' } })
     if (!settings) {
-      return NextResponse.json({ geminiApiKey: '', lowStockThreshold: 5, currency: 'INR' })
+      return NextResponse.json({ openaiApiKey: '', lowStockThreshold: 5, currency: 'INR' })
     }
     // Don't expose the actual API key, just whether it's set
     return NextResponse.json({
-      geminiApiKeySet: !!settings.geminiApiKey,
+      openaiApiKeySet: !!settings.openaiApiKey,
       lowStockThreshold: settings.lowStockThreshold,
       currency: settings.currency,
     })
@@ -27,17 +27,17 @@ export async function POST(request: NextRequest) {
       where: { id: 'settings' },
       create: {
         id: 'settings',
-        geminiApiKey: body.geminiApiKey || null,
+        openaiApiKey: body.openaiApiKey || null,
         lowStockThreshold: body.lowStockThreshold ?? 5,
         currency: body.currency || 'INR',
       },
       update: {
-        ...(body.geminiApiKey !== undefined && { geminiApiKey: body.geminiApiKey }),
+        ...(body.openaiApiKey !== undefined && { openaiApiKey: body.openaiApiKey }),
         ...(body.lowStockThreshold !== undefined && { lowStockThreshold: body.lowStockThreshold }),
         ...(body.currency !== undefined && { currency: body.currency }),
       },
     })
-    return NextResponse.json({ success: true, geminiApiKeySet: !!settings.geminiApiKey })
+    return NextResponse.json({ success: true, openaiApiKeySet: !!settings.openaiApiKey })
   } catch {
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })
   }

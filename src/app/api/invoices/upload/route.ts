@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile } from 'fs/promises'
-import path from 'path'
 import { extractInvoiceData } from '@/lib/ai-extractor'
 import { prisma } from '@/lib/db'
-import { ensureUploadDir } from '@/lib/storage'
+import { saveInvoiceFile } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,33 +21,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid file type. Upload JPG, PNG, WebP, or PDF.' }, { status: 400 })
     }
 
-    // Get uploads directory in a safe writable path (e.g. /tmp on Vercel)
-    const uploadDir = await ensureUploadDir()
-    const ext = path.extname(file.name) || (fileType === 'application/pdf' ? '.pdf' : '.jpg')
-    const tempName = `temp_${Date.now()}${ext}`
-    const tempPath = path.join(uploadDir, tempName)
-
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // Save temporary file safely (if disk is writable)
-    try {
-      await writeFile(tempPath, buffer)
-    } catch (writeErr) {
-      console.warn('Could not persist file to disk, proceeding with memory buffer:', writeErr)
-    }
-
-    // Get Gemini API key from settings or env
+    // Run AI extraction directly from the in-memory buffer
     const settings = await prisma.appSettings.findUnique({ where: { id: 'settings' } }).catch(() => null)
-    const apiKey = settings?.geminiApiKey || process.env.GEMINI_API_KEY
-
-    // Run AI extraction directly with in-memory buffer
+    const apiKey = settings?.openaiApiKey || process.env.OPENAI_API_KEY
     const extracted = await extractInvoiceData(buffer, fileType, apiKey || undefined)
+
+    // Persist the original file durably (Vercel Blob) so it can be linked to the
+    // invoice once the user confirms/saves the extracted data.
+    let uploaded: { url: string; fileName: string; fileType: string } | null = null
+    try {
+      uploaded = await saveInvoiceFile(buffer, file.name, fileType)
+    } catch (uploadErr) {
+      console.error('Blob upload failed:', uploadErr)
+      // Extraction can still proceed even if the file couldn't be stored —
+      // the user will just save the invoice without an attached document.
+    }
 
     return NextResponse.json({
       extracted,
-      tempFilePath: tempPath,
-      tempFileName: tempName,
+      tempFilePath: uploaded?.url || null,
+      tempFileName: uploaded?.fileName || file.name,
       fileType: fileType,
       originalName: file.name,
     })

@@ -1,48 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import path from 'path'
-import { getUploadDir } from '@/lib/storage'
-import { readFile } from 'fs/promises'
-import { existsSync } from 'fs'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Legacy file-serving endpoint.
+ *
+ * Invoice documents are now stored in Vercel Blob storage and referenced by
+ * their full public URL (`invoice.filePath` starts with "http"), so the
+ * frontend links to that URL directly and this route is no longer used for
+ * new uploads. It's kept only to redirect any pre-migration records that
+ * still have a Blob URL saved, and to return a clear error for anything else
+ * (e.g. old local /tmp paths from before the migration, which never
+ * persisted across serverless invocations and can't be served).
+ */
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const filePath = searchParams.get('path')
+  const { searchParams } = new URL(request.url)
+  const filePath = searchParams.get('path')
 
-    if (!filePath) {
-      return NextResponse.json({ error: 'No path provided' }, { status: 400 })
-    }
-
-    // Security: only serve files from uploads directory (use shared helper)
-    const uploadDir = process.env.UPLOAD_DIR || getUploadDir()
-    const resolved = path.resolve(filePath)
-    if (!resolved.startsWith(path.resolve(uploadDir))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
-    if (!existsSync(resolved)) {
-      return NextResponse.json({ error: 'File not found' }, { status: 404 })
-    }
-
-    const buffer = await readFile(resolved)
-    const ext = path.extname(resolved).toLowerCase()
-    const mimeTypes: Record<string, string> = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.pdf': 'application/pdf',
-      '.webp': 'image/webp',
-    }
-
-    return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        'Content-Type': mimeTypes[ext] || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=3600',
-      },
-    })
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to serve file' }, { status: 500 })
+  if (!filePath) {
+    return NextResponse.json({ error: 'No path provided' }, { status: 400 })
   }
+
+  if (filePath.startsWith('http')) {
+    return NextResponse.redirect(filePath)
+  }
+
+  return NextResponse.json(
+    { error: 'This file was stored on the local filesystem before the Blob storage migration and is no longer available.' },
+    { status: 410 }
+  )
 }

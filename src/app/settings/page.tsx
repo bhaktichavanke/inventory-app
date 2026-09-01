@@ -5,7 +5,7 @@ import { Settings, Key, AlertTriangle, Save, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/components/ui/toaster'
 
 export default function SettingsPage() {
-  const [geminiApiKey, setGeminiApiKey] = useState('')
+  const [openaiApiKey, setOpenaiApiKey] = useState('')
   const [apiKeySet, setApiKeySet] = useState(false)
   const [lowStockThreshold, setLowStockThreshold] = useState(5)
   const [currency, setCurrency] = useState('INR')
@@ -16,7 +16,7 @@ export default function SettingsPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data) {
-          setApiKeySet(!!data.geminiApiKeySet)
+          setApiKeySet(!!data.openaiApiKeySet)
           if (data.lowStockThreshold) setLowStockThreshold(data.lowStockThreshold)
           if (data.currency) setCurrency(data.currency)
         }
@@ -31,7 +31,7 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          geminiApiKey: geminiApiKey ? geminiApiKey : undefined,
+          openaiApiKey: openaiApiKey ? openaiApiKey : undefined,
           lowStockThreshold,
           currency,
         }),
@@ -40,8 +40,8 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error('Failed to save settings')
 
       toast({ title: 'Settings Saved', description: 'Your preferences have been updated.', type: 'success' })
-      setApiKeySet(!!geminiApiKey || apiKeySet)
-      setGeminiApiKey('')
+      setApiKeySet(!!openaiApiKey || apiKeySet)
+      setOpenaiApiKey('')
     } catch (err) {
       toast({ title: 'Error', description: 'Failed to save settings.', type: 'error' })
     } finally {
@@ -57,23 +57,23 @@ export default function SettingsPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6 shadow-sm">
-        {/* Gemini API Key */}
+        {/* OpenAI API Key */}
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Key className="w-4 h-4 text-blue-600" /> Google Gemini API Key
+            <Key className="w-4 h-4 text-blue-600" /> OpenAI API Key
           </label>
           <p className="text-xs text-gray-500">
-            Required for AI/OCR invoice extraction. Get your free key at{' '}
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-600 underline">
-              Google AI Studio
+            Required for AI/OCR invoice extraction. Get your key at{' '}
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-600 underline">
+              platform.openai.com
             </a>.
           </p>
           <div className="flex items-center gap-3">
             <input
               type="password"
-              placeholder={apiKeySet ? '•••••••••••••••••••••••• (API Key Configured)' : 'Enter your Gemini API key'}
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
+              placeholder={apiKeySet ? '•••••••••••••••••••••••• (API Key Configured)' : 'Enter your OpenAI API key'}
+              value={openaiApiKey}
+              onChange={(e) => setOpenaiApiKey(e.target.value)}
               className="flex-1 p-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
             {apiKeySet && (

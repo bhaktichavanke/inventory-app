@@ -1,85 +1,56 @@
-import path from 'path'
-import fs from 'fs/promises'
-import os from 'os'
+import { put, del } from '@vercel/blob'
 
-export function getUploadDir(): string {
-  if (process.env.UPLOAD_DIR) {
-    return process.env.UPLOAD_DIR
-  }
-  // Prefer a writable temp directory for non-development environments
-  // Use local `uploads` folder only during development for easier inspection
-  if (process.env.NODE_ENV === 'development') {
-    return path.join(process.cwd(), 'uploads')
-  }
-
-  // For production / serverless (Vercel, AWS Lambda, etc.) use OS temp dir
-  return path.join(os.tmpdir(), 'inventory_uploads')
+const MIME_EXT_MAP: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'application/pdf': '.pdf',
 }
 
-export async function ensureUploadDir(): Promise<string> {
-  const dir = getUploadDir()
-  try {
-    // The upload location is selected at runtime (by UPLOAD_DIR or the host).
-    // Do not ask Turbopack to trace this writable runtime directory.
-    await fs.mkdir(/* turbopackIgnore: true */ dir, { recursive: true })
-    return dir
-  } catch {
-    const fallback = path.join(os.tmpdir(), 'inventory_uploads')
-    try {
-      await fs.mkdir(/* turbopackIgnore: true */ fallback, { recursive: true })
-    } catch {
-      // Ignore if cannot create
-    }
-    return fallback
-  }
+function guessExtension(originalName: string, mimeType: string): string {
+  const fromName = originalName.includes('.') ? originalName.slice(originalName.lastIndexOf('.')).toLowerCase() : ''
+  if (fromName) return fromName
+  return MIME_EXT_MAP[mimeType] || '.jpg'
 }
 
-export async function saveFile(
+/**
+ * Uploads an invoice document (image/PDF) to Vercel Blob storage and returns
+ * its public URL. Vercel's serverless functions have an ephemeral, per-invocation
+ * filesystem, so files written to disk (even /tmp) are not guaranteed to survive
+ * between requests — Blob storage is the durable equivalent for this project.
+ */
+export async function saveInvoiceFile(
   buffer: Buffer,
   originalName: string,
-  invoiceNo: string
-): Promise<{ filePath: string; fileName: string; fileType: string }> {
-  const uploadDir = await ensureUploadDir()
+  mimeType: string
+): Promise<{ url: string; fileName: string; fileType: string }> {
+  const ext = guessExtension(originalName, mimeType)
+  const safeBase = originalName
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-zA-Z0-9-_]/g, '_')
+    .slice(0, 60) || 'invoice'
+  const fileName = `${Date.now()}_${safeBase}${ext}`
 
-  const ext = path.extname(originalName).toLowerCase() || '.jpg'
-  const safeInvoiceNo = invoiceNo.replace(/[^a-zA-Z0-9-_]/g, '_')
-  const timestamp = Date.now()
-  const fileName = `${safeInvoiceNo}_${timestamp}${ext}`
-  const filePath = path.join(uploadDir, fileName)
+  const blob = await put(`invoices/${fileName}`, buffer, {
+    access: 'public',
+    contentType: mimeType,
+    addRandomSuffix: true,
+  })
 
+  return { url: blob.url, fileName, fileType: mimeType }
+}
+
+/**
+ * Deletes a previously uploaded invoice file from Blob storage.
+ * Safe to call with any string — silently ignores URLs it doesn't recognize
+ * (e.g. legacy local file paths from before the Blob migration) and never throws,
+ * since a failed cleanup should not block the calling request (e.g. invoice delete).
+ */
+export async function deleteInvoiceFile(fileUrlOrPath: string | null | undefined): Promise<void> {
+  if (!fileUrlOrPath || !fileUrlOrPath.startsWith('http')) return
   try {
-    await fs.writeFile(filePath, buffer)
+    await del(fileUrlOrPath)
   } catch (err) {
-    console.warn('File write error, file stored in memory only:', err)
-  }
-
-  const mimeMap: Record<string, string> = {
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.pdf': 'application/pdf',
-    '.webp': 'image/webp',
-  }
-
-  return {
-    filePath,
-    fileName,
-    fileType: mimeMap[ext] || 'application/octet-stream',
-  }
-}
-
-export async function getFileBuffer(filePath: string): Promise<Buffer | null> {
-  try {
-    return await fs.readFile(filePath)
-  } catch {
-    return null
-  }
-}
-
-export async function deleteFile(filePath: string): Promise<void> {
-  try {
-    await fs.unlink(filePath)
-  } catch {
-    // ignore
+    console.warn('Failed to delete blob file (non-fatal):', err)
   }
 }

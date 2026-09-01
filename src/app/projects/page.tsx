@@ -67,7 +67,7 @@ export default function ProjectsPage() {
           <div className="col-span-full p-8 text-center text-gray-400">Loading projects...</div>
         ) : data?.projects?.length === 0 ? (
           <div className="col-span-full p-8 text-center text-gray-400 bg-white rounded-xl border">
-            No projects yet. Click "Create Project" to get started.
+            No projects yet. Click &ldquo;Create Project&rdquo; to get started.
           </div>
         ) : (
           data?.projects?.map((proj: any) => (

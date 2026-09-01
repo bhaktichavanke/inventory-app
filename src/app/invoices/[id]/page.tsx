@@ -145,7 +145,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </div>
                 <a
-                  href={`/api/files?path=${encodeURIComponent(inv.filePath)}`}
+                  href={inv.filePath.startsWith('http') ? inv.filePath : `/api/files?path=${encodeURIComponent(inv.filePath)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="p-2 bg-white border rounded-lg hover:bg-gray-100 text-blue-600"

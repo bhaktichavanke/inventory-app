@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
       prisma.product.findMany({
         where: {
           OR: [
-            { partNo: { contains: q } },
-            { description: { contains: q } },
-            { category: { contains: q } },
+            { partNo: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+            { category: { contains: q, mode: 'insensitive' } },
           ],
         },
         include: { supplier: true },
@@ -27,16 +27,16 @@ export async function GET(request: NextRequest) {
       prisma.invoice.findMany({
         where: {
           OR: [
-            { invoiceNo: { contains: q } },
-            { poNumber: { contains: q } },
-            { supplier: { name: { contains: q } } },
+            { invoiceNo: { contains: q, mode: 'insensitive' } },
+            { poNumber: { contains: q, mode: 'insensitive' } },
+            { supplier: { name: { contains: q, mode: 'insensitive' } } },
           ],
         },
         include: { supplier: true },
         take: 10,
       }),
       prisma.project.findMany({
-        where: { name: { contains: q } },
+        where: { name: { contains: q, mode: 'insensitive' } },
         take: 5,
       }),
     ])

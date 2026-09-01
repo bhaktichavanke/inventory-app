@@ -134,7 +134,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             {project.components?.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-8 text-center text-gray-400">
-                  No components assigned to this project yet. Click "Add Component" above.
+                  No components assigned to this project yet. Click &ldquo;Add Component&rdquo; above.
                 </td>
               </tr>
             ) : (

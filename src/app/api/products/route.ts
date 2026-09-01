@@ -18,16 +18,29 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { partNo: { contains: search } },
-        { description: { contains: search } },
-        { category: { contains: search } },
-        { supplier: { name: { contains: search } } },
+        { partNo: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { supplier: { name: { contains: search, mode: 'insensitive' } } },
       ]
     }
     if (category) where.category = category
     if (status) where.status = status
+
+    // Postgres doesn't support comparing two columns of the same row inside a
+    // `where` filter without a raw query, so low-stock filtering is applied
+    // in application code after fetching. Pagination is applied to the
+    // filtered result rather than the raw query.
     if (lowStock) {
-      where.currentStock = { lte: prisma.product.fields.lowStockThreshold }
+      const allMatching = await prisma.product.findMany({
+        where,
+        include: { supplier: true },
+        orderBy: { partNo: 'asc' },
+      })
+      const filtered = allMatching.filter((p) => p.currentStock <= p.lowStockThreshold)
+      const paged = filtered.slice(skip, skip + limit)
+      const enriched = paged.map((p) => ({ ...p, isLowStock: true }))
+      return NextResponse.json({ products: enriched, total: filtered.length, page, limit })
     }
 
     const [products, total] = await Promise.all([

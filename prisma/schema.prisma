@@ -5,8 +5,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection (PgBouncer) - used by the app at runtime.
+  url       = env("DATABASE_URL")
+  // Direct (non-pooled) connection - used only for `prisma db push` / `prisma migrate`.
+  directUrl = env("DIRECT_URL")
 }
 
 model Supplier {
@@ -147,7 +150,7 @@ model StockMovement {
 
 model AppSettings {
   id                String   @id @default("settings")
-  geminiApiKey      String?
+  openaiApiKey      String?
   lowStockThreshold Float    @default(5)
   currency          String   @default("INR")
   updatedAt         DateTime @updatedAt

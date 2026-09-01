@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { deleteInvoiceFile } from '@/lib/storage'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -90,6 +91,9 @@ export async function DELETE(
       await tx.stockMovement.deleteMany({ where: { referenceId: id } })
       await tx.invoice.delete({ where: { id } })
     })
+
+    // Best-effort cleanup of the stored document — never blocks the response.
+    await deleteInvoiceFile(invoice.filePath)
 
     return NextResponse.json({ success: true })
   } catch (error) {
