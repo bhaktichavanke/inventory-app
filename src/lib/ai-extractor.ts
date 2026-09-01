@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI, Part } from '@google/generative-ai'
 import fs from 'fs/promises'
+import os from 'os'
+import path from 'path'
 
 export interface ExtractedItem {
   partNo: string | null
@@ -95,7 +97,20 @@ export async function extractInvoiceData(
   apiKey?: string
 ): Promise<ExtractionResult> {
   const key = apiKey || process.env.GEMINI_API_KEY
-  if (!key) {
+  // If a Google service account JSON is provided in env, write it to a temp file
+  // and set GOOGLE_APPLICATION_CREDENTIALS so the SDK can use it.
+  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+  if (saJson) {
+    try {
+      const saPath = path.join(os.tmpdir(), `gcloud-sa-${Date.now()}.json`)
+      await fs.writeFile(saPath, saJson, { encoding: 'utf8' })
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = saPath
+    } catch (e) {
+      console.warn('Failed to write Google service account JSON to temp file', e)
+    }
+  }
+
+  if (!key && !saJson) {
     return {
       invoiceNo: null,
       poNumber: null,
@@ -110,7 +125,7 @@ export async function extractInvoiceData(
       totalAmount: null,
       items: [],
       flags: {},
-      error: 'GEMINI_API_KEY not configured. Please add your API key in Settings or Environment Variables.',
+      error: 'GEMINI_API_KEY not configured. Please add your API key in Settings or Environment Variables, or set GOOGLE_SERVICE_ACCOUNT_JSON with a service account JSON.',
     }
   }
 
