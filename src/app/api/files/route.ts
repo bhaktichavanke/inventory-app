@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
+import { getUploadDir } from '@/lib/storage'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 
@@ -14,8 +15,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No path provided' }, { status: 400 })
     }
 
-    // Security: only serve files from uploads directory
-    const uploadDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads')
+    // Security: only serve files from uploads directory (use shared helper)
+    const uploadDir = process.env.UPLOAD_DIR || getUploadDir()
     const resolved = path.resolve(filePath)
     if (!resolved.startsWith(path.resolve(uploadDir))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
