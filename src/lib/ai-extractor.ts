@@ -2,6 +2,7 @@ import { GoogleGenerativeAI, Part } from '@google/generative-ai'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
+import OpenAI from 'openai'
 
 export interface ExtractedItem {
   partNo: string | null
@@ -174,8 +175,42 @@ export async function extractInvoiceData(
       }
     }
 
-    if (!text && lastError) {
-      throw lastError
+    // If Gemini didn't return text, try OpenAI fallback when configured
+    if (!text) {
+      const openAiKey = process.env.OPENAI_API_KEY
+      if (openAiKey) {
+        try {
+          const openai = new OpenAI({ apiKey: openAiKey })
+          // avoid sending excessively large base64; truncate if necessary
+          const maxLen = 200_000
+          const sampleBase64 = base64Image.length > maxLen ? base64Image.slice(0, maxLen) : base64Image
+          const userContent = `${EXTRACTION_PROMPT}\n\n===IMAGE_BASE64_START===\n${sampleBase64}\n===IMAGE_BASE64_END===${base64Image.length > maxLen ? '\nNOTE: base64 truncated' : ''}`
+
+          const resp = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'You are an expert invoice data extractor.' },
+              { role: 'user', content: userContent },
+            ],
+            temperature: 0,
+          })
+
+          // Pull the returned text
+          // @ts-ignore
+          const maybe = resp?.choices?.[0]?.message?.content
+          if (maybe) text = maybe
+        } catch (oe) {
+          const openErr = oe instanceof Error ? oe : new Error(String(oe))
+          console.warn('OpenAI fallback failed:', openErr.message)
+        }
+      }
+
+      if (!text && lastError) {
+        throw lastError
+      }
+      if (!text) {
+        throw new Error('No AI response produced')
+      }
     }
 
     const cleaned = text
