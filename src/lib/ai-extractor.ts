@@ -97,6 +97,22 @@ export async function extractInvoiceData(
   apiKey?: string
 ): Promise<ExtractionResult> {
   const key = apiKey || process.env.GEMINI_API_KEY
+  const openAiKey = process.env.OPENAI_API_KEY
+  const imageBuffer = Buffer.isBuffer(imageInput)
+    ? imageInput
+    : await fs.readFile(imageInput)
+
+  // OpenAI is the preferred provider when configured. Unlike the former
+  // fallback, this sends the invoice as a real image/PDF input—not Base64 text.
+  if (openAiKey) {
+    try {
+      return await extractWithOpenAI(imageBuffer, mimeType, openAiKey)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn('OpenAI invoice extraction failed; trying Gemini:', message)
+    }
+  }
+
   // If a Google service account JSON is provided in env, write it to a temp file
   // and set GOOGLE_APPLICATION_CREDENTIALS so the SDK can use it.
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
@@ -111,22 +127,7 @@ export async function extractInvoiceData(
   }
 
   if (!key && !saJson) {
-    return {
-      invoiceNo: null,
-      poNumber: null,
-      invoiceDate: null,
-      supplierName: null,
-      baseAmount: null,
-      gstAmount: null,
-      cgst: null,
-      sgst: null,
-      igst: null,
-      otherTax: null,
-      totalAmount: null,
-      items: [],
-      flags: {},
-      error: 'GEMINI_API_KEY not configured. Please add your API key in Settings or Environment Variables, or set GOOGLE_SERVICE_ACCOUNT_JSON with a service account JSON.',
-    }
+    return extractionError('No AI provider is configured. Add OPENAI_API_KEY or a valid GEMINI_API_KEY in the Vercel environment variables.')
   }
 
   try {
@@ -140,13 +141,6 @@ export async function extractInvoiceData(
       'gemini-1.5-pro-latest',
       'gemini-1.5-pro',
     ]
-
-    let imageBuffer: Buffer
-    if (Buffer.isBuffer(imageInput)) {
-      imageBuffer = imageInput
-    } else {
-      imageBuffer = await fs.readFile(imageInput)
-    }
 
     const base64Image = imageBuffer.toString('base64')
     // Gemini supports application/pdf, image/jpeg, image/png, image/webp natively
@@ -174,88 +168,76 @@ export async function extractInvoiceData(
       }
     }
 
-    // If Gemini didn't return text, try OpenAI fallback when configured
     if (!text) {
-      const openAiKey = process.env.OPENAI_API_KEY
-      if (openAiKey) {
-        try {
-          // avoid sending excessively large base64; truncate if necessary
-          const maxLen = 200_000
-          const sampleBase64 = base64Image.length > maxLen ? base64Image.slice(0, maxLen) : base64Image
-          const userContent = `${EXTRACTION_PROMPT}\n\n===IMAGE_BASE64_START===\n${sampleBase64}\n===IMAGE_BASE64_END===${base64Image.length > maxLen ? '\nNOTE: base64 truncated' : ''}`
-
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openAiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: 'You are an expert invoice data extractor.' },
-                { role: 'user', content: userContent },
-              ],
-              temperature: 0,
-            }),
-          })
-          if (!response.ok) {
-            throw new Error(`OpenAI request failed (${response.status})`)
-          }
-
-          const payload = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string | null } }>
-          }
-          const content = payload.choices?.[0]?.message?.content
-          if (content) text = content
-        } catch (oe) {
-          const openErr = oe instanceof Error ? oe : new Error(String(oe))
-          console.warn('OpenAI fallback failed:', openErr.message)
-        }
-      }
-
-      if (!text && lastError) {
+      if (lastError) {
         throw lastError
       }
-      if (!text) {
-        throw new Error('No AI response produced')
-      }
+      throw new Error('No AI response produced')
     }
 
-    const cleaned = text
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim()
-
-    const parsed = JSON.parse(cleaned) as ExtractionResult
-    parsed.rawText = text
-
-    if (!parsed.items) parsed.items = []
-    if (!parsed.flags) parsed.flags = {}
-
-    parsed.items = parsed.items.map((item) => ({
-      ...item,
-      flags: item.flags || {},
-    }))
-
-    return parsed
+    return parseExtraction(text)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return {
-      invoiceNo: null,
-      poNumber: null,
-      invoiceDate: null,
-      supplierName: null,
-      baseAmount: null,
-      gstAmount: null,
-      cgst: null,
-      sgst: null,
-      igst: null,
-      otherTax: null,
-      totalAmount: null,
-      items: [],
-      flags: {},
-      error: `AI extraction failed: ${message}`,
-    }
+    return extractionError(`AI extraction failed: ${message}`)
+  }
+}
+
+async function extractWithOpenAI(
+  buffer: Buffer,
+  mimeType: string,
+  apiKey: string
+): Promise<ExtractionResult> {
+  const effectiveMime = mimeType || (buffer.subarray(0, 4).toString() === '%PDF' ? 'application/pdf' : 'image/jpeg')
+  const base64 = buffer.toString('base64')
+  const documentInput = effectiveMime === 'application/pdf'
+    ? { type: 'input_file', filename: 'invoice.pdf', file_data: `data:application/pdf;base64,${base64}` }
+    : { type: 'input_image', image_url: `data:${effectiveMime};base64,${base64}`, detail: 'high' }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_INVOICE_MODEL || 'gpt-4o-mini',
+      input: [{ role: 'user', content: [{ type: 'input_text', text: EXTRACTION_PROMPT }, documentInput] }],
+      text: { format: { type: 'json_object' } },
+      temperature: 0,
+      store: false,
+    }),
+  })
+
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(`OpenAI request failed (${response.status}): ${detail.slice(0, 500)}`)
+  }
+
+  const payload = (await response.json()) as {
+    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
+  }
+  const text = payload.output
+    ?.flatMap((item) => item.content ?? [])
+    .find((content) => content.type === 'output_text')?.text
+
+  if (!text) throw new Error('OpenAI returned no extraction text')
+  return parseExtraction(text)
+}
+
+function parseExtraction(text: string): ExtractionResult {
+  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  const parsed = JSON.parse(cleaned) as ExtractionResult
+  parsed.rawText = text
+  if (!parsed.items) parsed.items = []
+  if (!parsed.flags) parsed.flags = {}
+  parsed.items = parsed.items.map((item) => ({ ...item, flags: item.flags || {} }))
+  return parsed
+}
+
+function extractionError(error: string): ExtractionResult {
+  return {
+    invoiceNo: null, poNumber: null, invoiceDate: null, supplierName: null,
+    baseAmount: null, gstAmount: null, cgst: null, sgst: null, igst: null,
+    otherTax: null, totalAmount: null, items: [], flags: {}, error,
   }
 }
