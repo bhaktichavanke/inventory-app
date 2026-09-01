@@ -2,7 +2,6 @@ import { GoogleGenerativeAI, Part } from '@google/generative-ai'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import OpenAI from 'openai'
 
 export interface ExtractedItem {
   partNo: string | null
@@ -180,6 +179,8 @@ export async function extractInvoiceData(
       const openAiKey = process.env.OPENAI_API_KEY
       if (openAiKey) {
         try {
+          // dynamic import so bundler doesn't include the client in non-server builds
+          const OpenAI = (await import('openai')).default
           const openai = new OpenAI({ apiKey: openAiKey })
           // avoid sending excessively large base64; truncate if necessary
           const maxLen = 200_000
