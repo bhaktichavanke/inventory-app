@@ -1,6 +1,5 @@
 import path from 'path'
 import fs from 'fs/promises'
-import { existsSync } from 'fs'
 import os from 'os'
 
 export function getUploadDir(): string {
@@ -20,16 +19,14 @@ export function getUploadDir(): string {
 export async function ensureUploadDir(): Promise<string> {
   const dir = getUploadDir()
   try {
-    if (!existsSync(dir)) {
-      await fs.mkdir(dir, { recursive: true })
-    }
+    // The upload location is selected at runtime (by UPLOAD_DIR or the host).
+    // Do not ask Turbopack to trace this writable runtime directory.
+    await fs.mkdir(/* turbopackIgnore: true */ dir, { recursive: true })
     return dir
   } catch {
     const fallback = path.join(os.tmpdir(), 'inventory_uploads')
     try {
-      if (!existsSync(fallback)) {
-        await fs.mkdir(fallback, { recursive: true })
-      }
+      await fs.mkdir(/* turbopackIgnore: true */ fallback, { recursive: true })
     } catch {
       // Ignore if cannot create
     }

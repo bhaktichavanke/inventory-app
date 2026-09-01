@@ -130,7 +130,7 @@ export async function extractInvoiceData(
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(key)
+    const genAI = new GoogleGenerativeAI(key ?? '')
     
     // Model fallback sequence to ensure compatibility across API versions
     const modelNames = [
@@ -179,27 +179,35 @@ export async function extractInvoiceData(
       const openAiKey = process.env.OPENAI_API_KEY
       if (openAiKey) {
         try {
-          // dynamic import so bundler doesn't include the client in non-server builds
-          const OpenAI = (await import('openai')).default
-          const openai = new OpenAI({ apiKey: openAiKey })
           // avoid sending excessively large base64; truncate if necessary
           const maxLen = 200_000
           const sampleBase64 = base64Image.length > maxLen ? base64Image.slice(0, maxLen) : base64Image
           const userContent = `${EXTRACTION_PROMPT}\n\n===IMAGE_BASE64_START===\n${sampleBase64}\n===IMAGE_BASE64_END===${base64Image.length > maxLen ? '\nNOTE: base64 truncated' : ''}`
 
-          const resp = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: 'You are an expert invoice data extractor.' },
-              { role: 'user', content: userContent },
-            ],
-            temperature: 0,
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${openAiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: 'You are an expert invoice data extractor.' },
+                { role: 'user', content: userContent },
+              ],
+              temperature: 0,
+            }),
           })
+          if (!response.ok) {
+            throw new Error(`OpenAI request failed (${response.status})`)
+          }
 
-          // Pull the returned text
-          // @ts-ignore
-          const maybe = resp?.choices?.[0]?.message?.content
-          if (maybe) text = maybe
+          const payload = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string | null } }>
+          }
+          const content = payload.choices?.[0]?.message?.content
+          if (content) text = content
         } catch (oe) {
           const openErr = oe instanceof Error ? oe : new Error(String(oe))
           console.warn('OpenAI fallback failed:', openErr.message)
