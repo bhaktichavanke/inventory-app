@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     // Run AI extraction directly from the in-memory buffer
     const settings = await prisma.appSettings.findUnique({ where: { id: 'settings' } }).catch(() => null)
-    const apiKey = settings?.openaiApiKey || process.env.OPENAI_API_KEY
+    const apiKey = settings?.geminiApiKey || process.env.GEMINI_API_KEY
     const extracted = await extractInvoiceData(buffer, fileType, apiKey || undefined)
 
     // Persist the original file durably (Vercel Blob) so it can be linked to the

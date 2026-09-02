@@ -86,16 +86,23 @@ Return ONLY this JSON structure (no markdown, no explanation):
   ]
 }`
 
+// Model fallback chain — tried in order until one succeeds. Kept as a list
+// (rather than a single hardcoded name) because Google periodically
+// deprecates/renames Gemini model IDs; "gemini-flash-latest" is Google's
+// self-updating alias and acts as a safety net if the pinned model below
+// is retired.
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-flash-latest']
+
 export async function extractInvoiceData(
   imageInput: string | Buffer,
   mimeType: string,
   apiKey?: string
 ): Promise<ExtractionResult> {
-  const key = apiKey || process.env.OPENAI_API_KEY
+  const key = apiKey || process.env.GEMINI_API_KEY
 
   if (!key) {
     return extractionError(
-      'No OpenAI API key configured. Add it in Settings, or set OPENAI_API_KEY in your environment.'
+      'No Gemini API key configured. Add it in Settings, or set GEMINI_API_KEY in your environment. Get a free key at https://aistudio.google.com/apikey'
     )
   }
 
@@ -103,55 +110,71 @@ export async function extractInvoiceData(
   const buffer = Buffer.isBuffer(imageInput) ? imageInput : await fs.readFile(imageInput)
 
   try {
-    return await extractWithOpenAI(buffer, mimeType, key)
+    return await extractWithGemini(buffer, mimeType, key)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return extractionError(`AI extraction failed: ${message}`)
   }
 }
 
-async function extractWithOpenAI(
-  buffer: Buffer,
-  mimeType: string,
-  apiKey: string
-): Promise<ExtractionResult> {
+async function extractWithGemini(buffer: Buffer, mimeType: string, apiKey: string): Promise<ExtractionResult> {
   const effectiveMime =
     mimeType || (buffer.subarray(0, 4).toString() === '%PDF' ? 'application/pdf' : 'image/jpeg')
   const base64 = buffer.toString('base64')
-  const documentInput =
-    effectiveMime === 'application/pdf'
-      ? { type: 'input_file', filename: 'invoice.pdf', file_data: `data:application/pdf;base64,${base64}` }
-      : { type: 'input_image', image_url: `data:${effectiveMime};base64,${base64}`, detail: 'high' }
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_INVOICE_MODEL || 'gpt-4o-mini',
-      input: [{ role: 'user', content: [{ type: 'input_text', text: EXTRACTION_PROMPT }, documentInput] }],
-      text: { format: { type: 'json_object' } },
+  const requestBody = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: EXTRACTION_PROMPT }, { inlineData: { mimeType: effectiveMime, data: base64 } }],
+      },
+    ],
+    generationConfig: {
       temperature: 0,
-      store: false,
-    }),
-  })
-
-  if (!response.ok) {
-    const detail = await response.text()
-    throw new Error(`OpenAI request failed (${response.status}): ${detail.slice(0, 500)}`)
+      responseMimeType: 'application/json',
+    },
   }
 
-  const payload = (await response.json()) as {
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
-  }
-  const text = payload.output
-    ?.flatMap((item) => item.content ?? [])
-    .find((content) => content.type === 'output_text')?.text
+  let lastError: Error | null = null
 
-  if (!text) throw new Error('OpenAI returned no extraction text')
-  return parseExtraction(text)
+  for (const model of GEMINI_MODELS) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify(requestBody),
+        }
+      )
+
+      if (!response.ok) {
+        const detail = await response.text()
+        // 404 means this model name isn't available for this key/region —
+        // try the next one in the fallback chain instead of failing outright.
+        if (response.status === 404) {
+          lastError = new Error(`Model "${model}" unavailable (${response.status}): ${detail.slice(0, 200)}`)
+          continue
+        }
+        throw new Error(`Gemini request failed (${response.status}): ${detail.slice(0, 500)}`)
+      }
+
+      const payload = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+      }
+      const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('')
+
+      if (!text) throw new Error('Gemini returned no extraction text')
+      return parseExtraction(text)
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error('Unknown error')
+    }
+  }
+
+  throw lastError || new Error('All Gemini model attempts failed')
 }
 
 function parseExtraction(text: string): ExtractionResult {

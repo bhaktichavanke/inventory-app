@@ -7,17 +7,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/*': ['./node_modules/.prisma/client/**/*'],
   },
-  eslint: {
-    // `next build` runs ESLint and fails the build on any error by default.
-    // This codebase has ~19 pre-existing `no-explicit-any` warnings-turned-errors
-    // from eslint-config-next's strict preset (mostly untyped API response
-    // handling in client components) that are code-quality issues, not
-    // functional bugs. They don't block `next dev` or runtime behavior, so we
-    // don't let them block deployment either. Run `npm run lint` locally/in CI
-    // to see and gradually clean these up — TypeScript's own build-time type
-    // checking (a much stronger safety net) stays fully enabled below.
-    ignoreDuringBuilds: true,
-  },
+  // Note: Next.js 16 removed the `next lint` command and the `eslint`
+  // next.config option — ESLint is no longer run as part of `next build`
+  // at all, so it cannot block deployment. (TypeScript's build-time type
+  // checking is unaffected and still runs.) Run `npm run lint` manually /
+  // in CI if you want ESLint's ~19 pre-existing no-explicit-any warnings
+  // surfaced and cleaned up over time.
 };
 
 export default nextConfig;

@@ -150,7 +150,7 @@ model StockMovement {
 
 model AppSettings {
   id                String   @id @default("settings")
-  openaiApiKey      String?
+  geminiApiKey      String?
   lowStockThreshold Float    @default(5)
   currency          String   @default("INR")
   updatedAt         DateTime @updatedAt

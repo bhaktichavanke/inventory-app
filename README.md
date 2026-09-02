@@ -1,14 +1,14 @@
 # Inventory Manager
 
 An internal inventory, invoice, and project-component tracking system with AI-assisted
-invoice extraction (OpenAI), built with Next.js (App Router), Prisma, and PostgreSQL.
+invoice extraction (Google Gemini — free tier), built with Next.js (App Router), Prisma, and PostgreSQL.
 
 ## Stack
 
 - **Framework:** Next.js 16 (App Router, API routes)
 - **Database:** PostgreSQL via Prisma ORM
 - **File storage:** Vercel Blob (invoice document uploads)
-- **AI extraction:** OpenAI (`gpt-4o-mini` by default) for reading invoice images/PDFs
+- **AI extraction:** Google Gemini (free tier available, no card required) for reading invoice images/PDFs
 - **UI:** React 19, Tailwind CSS, Radix UI, TanStack Query/Table
 
 ## Local development
@@ -21,7 +21,7 @@ invoice extraction (OpenAI), built with Next.js (App Router), Prisma, and Postgr
 2. **Set up environment variables** — copy `.env.example` to `.env` and fill in:
    - `DATABASE_URL` / `DIRECT_URL` — a PostgreSQL database (see [Database setup](#database-setup))
    - `BLOB_READ_WRITE_TOKEN` — a Vercel Blob token (see [File storage setup](#file-storage-setup))
-   - `OPENAI_API_KEY` — optional; without it, invoice upload still works but skips AI auto-extraction
+   - `GEMINI_API_KEY` — optional; without it, invoice upload still works but skips AI auto-extraction. Get a free key at https://aistudio.google.com/apikey
 
 3. **Push the schema and seed sample data**
    ```bash
@@ -63,7 +63,7 @@ regenerate it — the key steps are:
 2. Import the repo in Vercel.
 3. Add the **Neon** integration (Storage tab) → auto-fills `DATABASE_URL` / `DIRECT_URL` / etc.
 4. Add a **Blob store** (Storage tab) → auto-fills `BLOB_READ_WRITE_TOKEN`.
-5. Add `OPENAI_API_KEY` manually (Settings → Environment Variables).
+5. Add `GEMINI_API_KEY` manually (Settings → Environment Variables) — get a free key at aistudio.google.com/apikey.
 6. Deploy. Vercel runs `prisma generate && prisma db push && next build` automatically.
 
 ## Project structure
@@ -73,7 +73,7 @@ src/app/api/          API routes (products, invoices, projects, dashboard, searc
 src/app/               Pages (App Router)
 src/lib/db.ts          Prisma client singleton
 src/lib/storage.ts     Vercel Blob upload/delete helpers
-src/lib/ai-extractor.ts  OpenAI-based invoice OCR/extraction
+src/lib/ai-extractor.ts  Gemini-based invoice OCR/extraction
 src/lib/excel.ts       XLSX import/export
 prisma/schema.prisma   Database schema (PostgreSQL)
 prisma/seed.ts         Sample data seeder
